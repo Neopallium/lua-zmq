@@ -40,9 +40,12 @@ function thread_mt:join()
 	return self.thread:join()
 end
 
-local bootstrap_code = [[
+local bootstrap_pre = [[
 local action, action_arg, parent_ctx = ...
 local func
+]]
+
+local bootstrap_post = [[
 
 -- copy parent ZeroMQ context to this child thread.
 local zmq = require"zmq"
@@ -69,6 +72,8 @@ end
 return func(select(4, ...))
 ]]
 
+local bootstrap_code = bootstrap_pre..bootstrap_post
+
 local function new_thread(ctx, action, action_arg, ...)
 	-- convert ZMQ_Ctx to lightuserdata.
 	if ctx then
@@ -81,6 +86,10 @@ local function new_thread(ctx, action, action_arg, ...)
 end
 
 module(...)
+
+function set_bootstrap_prelude(code)
+   bootstrap_code = bootstrap_pre .. code .. bootstrap_post
+end
 
 function runfile(ctx, file, ...)
 	return new_thread(ctx, 'runfile', file, ...)
