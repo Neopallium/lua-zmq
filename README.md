@@ -22,7 +22,7 @@ For Ubuntu 10.10 users:
 Installation
 ============
 
-It is recommended to either compile Lua with the "-pthread" flag or preload libpthread.so on Linux when using this module ([See this glibc bug report](http://sourceware.org/bugzilla/show_bug.cgi?id=10652):
+It is recommended to either compile Lua with the "-pthread" flag or preload libpthread.so on Linux when using this module ([see this glibc bug report](http://sourceware.org/bugzilla/show_bug.cgi?id=10652)):
 
 	$ LD_PRELOAD=/lib/libpthread.so lua
 
