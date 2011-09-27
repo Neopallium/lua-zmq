@@ -2159,6 +2159,9 @@ static const char *get_zmq_strerror() {
 	case EAGAIN:
 		return "timeout";
 		break;
+	case EINTR:
+		return "interrupted";
+		break;
 #if defined(ETERM)
 	case ETERM:
 		return "closed";
