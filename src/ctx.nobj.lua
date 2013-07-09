@@ -36,5 +36,13 @@ typedef struct ZMQ_Ctx ZMQ_Ctx;
 	method "socket" {
 		c_method_call "!ZMQ_Socket *"  "zmq_socket" { "int", "type"}
 	},
+	method "set" {
+		if_defs = { "VERSION_3_2" },
+		c_method_call "int" "zmq_ctx_set" { "int", "flag", "int", "value" } 
+	},
+	method "get" {
+		if_defs = { "VERSION_3_2" },
+		c_method_call "int" "zmq_ctx_get" { "int", "flag" }
+	},
 }
 

@@ -118,6 +118,10 @@ c_source "typedefs" [[
 export_definitions {
 MAX_VSM_SIZE      = "ZMQ_MAX_VSM_SIZE",
 
+-- context settings
+MAX_SOCKETS	  = "ZMQ_MAX_SOCKETS",
+IO_THREADS        = "ZMQ_IO_THREADS",
+
 -- message types
 DELIMITER         = "ZMQ_DELIMITER",
 VSM               = "ZMQ_VSM",
