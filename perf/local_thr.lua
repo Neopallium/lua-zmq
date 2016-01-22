@@ -30,8 +30,7 @@ local message_count = tonumber(arg[3])
 local zmq = require"zmq"
 
 local ctx = zmq.init(1)
-local s = assert(ctx:socket(zmq.SUB))
-assert(s:setopt(zmq.SUBSCRIBE, ""))
+local s = assert(ctx:socket(zmq.PULL))
 assert(s:bind(bind_to))
 
 print(string.format("message size: %i [B]", message_size))

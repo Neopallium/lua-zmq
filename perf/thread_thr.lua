@@ -37,9 +37,7 @@ local child_code = [[
 	local zthreads = require"zmq.threads"
 
 	local ctx = zthreads.get_parent_ctx()
-	local s = assert(ctx:socket(zmq.PUB))
-	-- for ZeroMQ 3.x need to change HWM option.
-	assert(s:set_hwm(0))
+	local s = assert(ctx:socket(zmq.PUSH))
 	assert(s:connect(connect_to))
 
 	local data = ("0"):rep(message_size)
@@ -69,8 +67,7 @@ local child_code = [[
 ]]
 
 local ctx = zmq.init(1)
-local s = assert(ctx:socket(zmq.SUB))
-assert(s:setopt(zmq.SUBSCRIBE, ""))
+local s = assert(ctx:socket(zmq.PULL))
 assert(s:bind(bind_to))
 
 print(string.format("message size: %i [B]", message_size))
