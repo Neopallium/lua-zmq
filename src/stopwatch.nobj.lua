@@ -19,8 +19,10 @@
 -- THE SOFTWARE.
 
 object "ZMQ_StopWatch" {
-	include "zmq_utils.h",
 	c_source[[
+#if (ZMQ_VERSION_MAJOR <= 4) && (ZMQ_VERSION_MINOR <= 1)
+#include "zmq_utils.h"
+#endif
 typedef struct ZMQ_StopWatch ZMQ_StopWatch;
 ]],
 	constructor "start" {

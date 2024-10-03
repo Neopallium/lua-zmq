@@ -318,9 +318,8 @@ c_function "proxy" { if_defs = "VERSION_3_2",
 },
 
 --
--- zmq_utils.h
+-- utils
 --
-include "zmq_utils.h",
 c_function "stopwatch_start" {
 	c_call "!ZMQ_StopWatch *" "zmq_stopwatch_start" {},
 },

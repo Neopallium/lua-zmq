@@ -774,6 +774,9 @@ local tmp_val_len = ffi.new('size_t[1]', 4)
 	-- create helper function for `zmq_send`
 	c_source[[
 LUA_NOBJ_API ZMQ_Error simple_zmq_send(ZMQ_Socket *sock, const char *data, size_t data_len, int flags) {
+#if VERSION_3_2
+	return zmq_send(sock, data, data_len, flags);
+#else
 	ZMQ_Error err;
 	zmq_msg_t msg;
 	/* initialize message */
@@ -787,6 +790,7 @@ LUA_NOBJ_API ZMQ_Error simple_zmq_send(ZMQ_Socket *sock, const char *data, size_
 		zmq_msg_close(&msg);
 	}
 	return err;
+#endif
 }
 ]],
 	method "send" {
@@ -858,6 +862,14 @@ typedef struct ZMQ_recv_event {
 	size_t     addr_len;
 	const char *err;
 } ZMQ_recv_event;
+
+#if (ZMQ_VERSION_MAJOR == 4) && (ZMQ_VERSION_MINOR >= 1)
+typedef struct zmq_event_t {
+	int16_t   event;
+	int32_t   value;
+} zmq_event_t;
+
+#endif
 
 int monitor_recv_event(ZMQ_Socket *s, zmq_msg_t *msg, int flags, ZMQ_recv_event *ev)
 {
