@@ -1,7 +1,8 @@
 package = "lua-zmq"
-version = "scm-1"
+version = "1.2-1"
 source = {
 	url = "git://github.com/Neopallium/lua-zmq.git",
+	branch = "v1.2",
 }
 description = {
 	summary = "Lua bindings to zeromq2, with LuaJIT2 FFI support.",
@@ -12,28 +13,12 @@ dependencies = {
 	"lua >= 5.1, < 5.5",
 }
 external_dependencies = {
-	platforms = {
-		windows = {
-			ZEROMQ = {
-				library = "libzmq",
-			}
-		},
-	},
 	ZEROMQ = {
 		header = "zmq.h",
 		library = "zmq",
 	}
 }
 build = {
-	platforms = {
-		windows = {
-			modules = {
-				zmq = {
-					libraries = {"libzmq"},
-				}
-			}
-		},
-	},
 	type = "builtin",
 	modules = {
 		zmq = {
@@ -46,6 +31,6 @@ build = {
 	install = {
 		lua = {
 			['zmq.poller'] = "src/poller.lua",
-		},
-	},
+		}
+	}
 }

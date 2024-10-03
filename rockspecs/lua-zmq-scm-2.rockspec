@@ -1,5 +1,5 @@
 package = "lua-zmq"
-version = "scm-1"
+version = "scm-2"
 source = {
 	url = "git://github.com/Neopallium/lua-zmq.git",
 }
