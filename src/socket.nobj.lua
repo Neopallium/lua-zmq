@@ -608,7 +608,7 @@ end
 #if VERSION_3_0 || VERSION_4_0
 	/* 3.0 backwards compatibility support for HWM. */
 	if(${opt} == ZMQ_HWM) {
-		int_val = luaL_checklong(L, ${val::idx});
+		int_val = luaL_checkinteger(L, ${val::idx});
 		val = &int_val;
 		val_len = sizeof(int_val);
 		${err} = zmq_setsockopt(${this}, ZMQ_SNDHWM, val, val_len);
@@ -626,28 +626,28 @@ end
 	switch(opt_types[${opt}]) {
 #if VERSION_2_1 || VERSION_3_0 || VERSION_4_0
 	case OPT_TYPE_FD:
-		fd_val = luaL_checklong(L, ${val::idx});
+		fd_val = luaL_checkinteger(L, ${val::idx});
 		val = &fd_val;
 		val_len = sizeof(fd_val);
 		break;
 #endif
 	case OPT_TYPE_INT:
-		int_val = luaL_checklong(L, ${val::idx});
+		int_val = luaL_checkinteger(L, ${val::idx});
 		val = &int_val;
 		val_len = sizeof(int_val);
 		break;
 	case OPT_TYPE_UINT32:
-		uint32_val = luaL_checklong(L, ${val::idx});
+		uint32_val = luaL_checkinteger(L, ${val::idx});
 		val = &uint32_val;
 		val_len = sizeof(uint32_val);
 		break;
 	case OPT_TYPE_UINT64:
-		uint64_val = luaL_checklong(L, ${val::idx});
+		uint64_val = luaL_checkinteger(L, ${val::idx});
 		val = &uint64_val;
 		val_len = sizeof(uint64_val);
 		break;
 	case OPT_TYPE_INT64:
-		int64_val = luaL_checklong(L, ${val::idx});
+		int64_val = luaL_checkinteger(L, ${val::idx});
 		val = &int64_val;
 		val_len = sizeof(int64_val);
 		break;

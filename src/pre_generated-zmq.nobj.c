@@ -20,12 +20,10 @@
 #define luaL_Reg luaL_reg
 #endif
 
-/* some Lua 5.1 compatibility support. */
-#if !defined(LUA_VERSION_NUM) || (LUA_VERSION_NUM == 501)
 /*
-** Adapted from Lua 5.2.0
+** Adapted from Lua 5.2.0 luaL_setfuncs.
 */
-static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
+static void nobj_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
   luaL_checkstack(L, nup, "too many upvalues");
   for (; l->name != NULL; l++) {  /* fill the table with given functions */
     int i;
@@ -38,6 +36,9 @@ static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
   lua_pop(L, nup);  /* remove upvalues */
 }
 
+/* some Lua 5.1 compatibility support. */
+#if !defined(LUA_VERSION_NUM) || (LUA_VERSION_NUM == 501)
+
 #define lua_load_no_mode(L, reader, data, source) \
 	lua_load(L, reader, data, source)
 
@@ -45,7 +46,7 @@ static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
 
 #endif
 
-#if LUA_VERSION_NUM == 502
+#if LUA_VERSION_NUM >= 502
 
 #define lua_load_no_mode(L, reader, data, source) \
 	lua_load(L, reader, data, source, NULL)
@@ -68,7 +69,6 @@ static int luaL_typerror (lua_State *L, int narg, const char *tname) {
 
 #include <string.h>
 #include "zmq.h"
-#include "zmq_utils.h"
 
 
 
@@ -683,8 +683,8 @@ static void obj_type_register_implements(lua_State *L, const reg_impl *impls) {
 #define REG_MODULES_AS_GLOBALS 0
 #endif
 
-/* For Lua 5.2 don't register modules as globals. */
-#if LUA_VERSION_NUM == 502
+/* For Lua >=5.2 don't register modules as globals. */
+#if LUA_VERSION_NUM >= 502
 #undef REG_MODULES_AS_GLOBALS
 #define REG_MODULES_AS_GLOBALS 0
 #endif
@@ -1251,7 +1251,7 @@ static void obj_type_register_package(lua_State *L, const reg_sub_module *type_r
 	/* create public functions table. */
 	if(reg_list != NULL && reg_list[0].name != NULL) {
 		/* register functions */
-		luaL_setfuncs(L, reg_list, 0);
+		nobj_setfuncs(L, reg_list, 0);
 	}
 
 	obj_type_register_constants(L, type_reg->constants, -1, type_reg->bidirectional_consts);
@@ -1266,17 +1266,17 @@ static void obj_type_register_meta(lua_State *L, const reg_sub_module *type_reg)
 	reg_list = type_reg->pub_funcs;
 	if(reg_list != NULL && reg_list[0].name != NULL) {
 		/* register functions */
-		luaL_setfuncs(L, reg_list, 0);
+		nobj_setfuncs(L, reg_list, 0);
 	}
 
 	obj_type_register_constants(L, type_reg->constants, -1, type_reg->bidirectional_consts);
 
 	/* register methods. */
-	luaL_setfuncs(L, type_reg->methods, 0);
+	nobj_setfuncs(L, type_reg->methods, 0);
 
 	/* create metatable table. */
 	lua_newtable(L);
-	luaL_setfuncs(L, type_reg->metas, 0); /* fill metatable */
+	nobj_setfuncs(L, type_reg->metas, 0); /* fill metatable */
 	/* setmetatable on meta-object. */
 	lua_setmetatable(L, -2);
 
@@ -1301,7 +1301,7 @@ static void obj_type_register(lua_State *L, const reg_sub_module *type_reg, int 
 	reg_list = type_reg->pub_funcs;
 	if(reg_list != NULL && reg_list[0].name != NULL) {
 		/* register "constructors" as to object's public API */
-		luaL_setfuncs(L, reg_list, 0); /* fill public API table. */
+		nobj_setfuncs(L, reg_list, 0); /* fill public API table. */
 
 		/* make public API table callable as the default constructor. */
 		lua_newtable(L); /* create metatable */
@@ -1331,7 +1331,7 @@ static void obj_type_register(lua_State *L, const reg_sub_module *type_reg, int 
 #endif
 	}
 
-	luaL_setfuncs(L, type_reg->methods, 0); /* fill methods table. */
+	nobj_setfuncs(L, type_reg->methods, 0); /* fill methods table. */
 
 	luaL_newmetatable(L, type->name); /* create metatable */
 	lua_pushliteral(L, ".name");
@@ -1349,7 +1349,7 @@ static void obj_type_register(lua_State *L, const reg_sub_module *type_reg, int 
 	lua_pushvalue(L, -2); /* dup metatable. */
 	lua_rawset(L, priv_table);    /* priv_table["<object_name>"] = metatable */
 
-	luaL_setfuncs(L, type_reg->metas, 0); /* fill metatable */
+	nobj_setfuncs(L, type_reg->metas, 0); /* fill metatable */
 
 	/* add obj_bases to metatable. */
 	while(base->id >= 0) {
@@ -5802,6 +5802,9 @@ LUA_NOBJ_API ZMQ_Error lzmq_socket_zap_domain(ZMQ_Socket *sock, char *value, siz
 #endif /* #if VERSION_4_0 */
 
 LUA_NOBJ_API ZMQ_Error simple_zmq_send(ZMQ_Socket *sock, const char *data, size_t data_len, int flags) {
+#if VERSION_3_2
+	return zmq_send(sock, data, data_len, flags);
+#else
 	ZMQ_Error err;
 	zmq_msg_t msg;
 	/* initialize message */
@@ -5815,6 +5818,7 @@ LUA_NOBJ_API ZMQ_Error simple_zmq_send(ZMQ_Socket *sock, const char *data, size_
 		zmq_msg_close(&msg);
 	}
 	return err;
+#endif
 }
 
 typedef struct ZMQ_recv_event {
@@ -5824,6 +5828,14 @@ typedef struct ZMQ_recv_event {
 	size_t     addr_len;
 	const char *err;
 } ZMQ_recv_event;
+
+#if (ZMQ_VERSION_MAJOR == 4) && (ZMQ_VERSION_MINOR >= 1)
+typedef struct zmq_event_t {
+	int16_t   event;
+	int32_t   value;
+} zmq_event_t;
+
+#endif
 
 int monitor_recv_event(ZMQ_Socket *s, zmq_msg_t *msg, int flags, ZMQ_recv_event *ev)
 {
@@ -6162,6 +6174,9 @@ int poller_next_revents(ZMQ_Poller *poller, int *revents) {
 
 typedef struct ZMQ_Ctx ZMQ_Ctx;
 
+#if (ZMQ_VERSION_MAJOR <= 4) && (ZMQ_VERSION_MINOR <= 1)
+#include "zmq_utils.h"
+#endif
 typedef struct ZMQ_StopWatch ZMQ_StopWatch;
 
 
@@ -6598,7 +6613,7 @@ static int ZMQ_Socket__setopt__meth(lua_State *L) {
 #if VERSION_3_0 || VERSION_4_0
 	/* 3.0 backwards compatibility support for HWM. */
 	if(opt2 == ZMQ_HWM) {
-		int_val = luaL_checklong(L, 3);
+		int_val = luaL_checkinteger(L, 3);
 		val = &int_val;
 		val_len = sizeof(int_val);
 		err1 = zmq_setsockopt(this1, ZMQ_SNDHWM, val, val_len);
@@ -6616,28 +6631,28 @@ static int ZMQ_Socket__setopt__meth(lua_State *L) {
 	switch(opt_types[opt2]) {
 #if VERSION_2_1 || VERSION_3_0 || VERSION_4_0
 	case OPT_TYPE_FD:
-		fd_val = luaL_checklong(L, 3);
+		fd_val = luaL_checkinteger(L, 3);
 		val = &fd_val;
 		val_len = sizeof(fd_val);
 		break;
 #endif
 	case OPT_TYPE_INT:
-		int_val = luaL_checklong(L, 3);
+		int_val = luaL_checkinteger(L, 3);
 		val = &int_val;
 		val_len = sizeof(int_val);
 		break;
 	case OPT_TYPE_UINT32:
-		uint32_val = luaL_checklong(L, 3);
+		uint32_val = luaL_checkinteger(L, 3);
 		val = &uint32_val;
 		val_len = sizeof(uint32_val);
 		break;
 	case OPT_TYPE_UINT64:
-		uint64_val = luaL_checklong(L, 3);
+		uint64_val = luaL_checkinteger(L, 3);
 		val = &uint64_val;
 		val_len = sizeof(uint64_val);
 		break;
 	case OPT_TYPE_INT64:
-		int64_val = luaL_checklong(L, 3);
+		int64_val = luaL_checkinteger(L, 3);
 		val = &int64_val;
 		val_len = sizeof(int64_val);
 		break;
@@ -9041,212 +9056,263 @@ static const luaL_Reg obj_ZErrors_metas[] = {
 };
 
 static const obj_const obj_ZErrors_constants[] = {
-#ifdef ELNRNG
-  {"ELNRNG", NULL, ELNRNG, CONST_NUMBER},
-#endif
-#ifdef EPFNOSUPPORT
-  {"EPFNOSUPPORT", NULL, EPFNOSUPPORT, CONST_NUMBER},
-#endif
-#ifdef EBADR
-  {"EBADR", NULL, EBADR, CONST_NUMBER},
-#endif
-#ifdef ENOLINK
-  {"ENOLINK", NULL, ENOLINK, CONST_NUMBER},
-#endif
-#ifdef ENOSTR
-  {"ENOSTR", NULL, ENOSTR, CONST_NUMBER},
-#endif
-#ifdef ERESTART
-  {"ERESTART", NULL, ERESTART, CONST_NUMBER},
-#endif
-#ifdef EUCLEAN
-  {"EUCLEAN", NULL, EUCLEAN, CONST_NUMBER},
-#endif
-#ifdef ELIBSCN
-  {"ELIBSCN", NULL, ELIBSCN, CONST_NUMBER},
-#endif
-#ifdef EROFS
-  {"EROFS", NULL, EROFS, CONST_NUMBER},
-#endif
-#ifdef EBADE
-  {"EBADE", NULL, EBADE, CONST_NUMBER},
-#endif
-#ifdef ENOTSOCK
-  {"ENOTSOCK", NULL, ENOTSOCK, CONST_NUMBER},
-#endif
-#ifdef ENOTCONN
-  {"ENOTCONN", NULL, ENOTCONN, CONST_NUMBER},
-#endif
-#ifdef EREMOTE
-  {"EREMOTE", NULL, EREMOTE, CONST_NUMBER},
-#endif
-#ifdef ECOMM
-  {"ECOMM", NULL, ECOMM, CONST_NUMBER},
-#endif
-#ifdef ENODATA
-  {"ENODATA", NULL, ENODATA, CONST_NUMBER},
-#endif
-#ifdef EPERM
-  {"EPERM", NULL, EPERM, CONST_NUMBER},
-#endif
-#ifdef EBADRQC
-  {"EBADRQC", NULL, EBADRQC, CONST_NUMBER},
-#endif
-#ifdef ENOSR
-  {"ENOSR", NULL, ENOSR, CONST_NUMBER},
-#endif
-#ifdef ELIBMAX
-  {"ELIBMAX", NULL, ELIBMAX, CONST_NUMBER},
-#endif
-#ifdef EDOTDOT
-  {"EDOTDOT", NULL, EDOTDOT, CONST_NUMBER},
-#endif
-#ifdef EFSM
-  {"EFSM", NULL, EFSM, CONST_NUMBER},
-#endif
-#ifdef ENOPROTOOPT
-  {"ENOPROTOOPT", NULL, ENOPROTOOPT, CONST_NUMBER},
-#endif
-#ifdef EBFONT
-  {"EBFONT", NULL, EBFONT, CONST_NUMBER},
-#endif
-#ifdef ENOCOMPATPROTO
-  {"ENOCOMPATPROTO", NULL, ENOCOMPATPROTO, CONST_NUMBER},
-#endif
-#ifdef EKEYREVOKED
-  {"EKEYREVOKED", NULL, EKEYREVOKED, CONST_NUMBER},
-#endif
-#ifdef ESRMNT
-  {"ESRMNT", NULL, ESRMNT, CONST_NUMBER},
-#endif
-#ifdef EOVERFLOW
-  {"EOVERFLOW", NULL, EOVERFLOW, CONST_NUMBER},
-#endif
-#ifdef EDQUOT
-  {"EDQUOT", NULL, EDQUOT, CONST_NUMBER},
-#endif
-#ifdef EFBIG
-  {"EFBIG", NULL, EFBIG, CONST_NUMBER},
-#endif
-#ifdef EIDRM
-  {"EIDRM", NULL, EIDRM, CONST_NUMBER},
-#endif
-#ifdef EDOM
-  {"EDOM", NULL, EDOM, CONST_NUMBER},
-#endif
-#ifdef EPROTO
-  {"EPROTO", NULL, EPROTO, CONST_NUMBER},
-#endif
-#ifdef EMULTIHOP
-  {"EMULTIHOP", NULL, EMULTIHOP, CONST_NUMBER},
-#endif
 #ifdef ENOCSI
   {"ENOCSI", NULL, ENOCSI, CONST_NUMBER},
 #endif
-#ifdef EDEADLOCK
-  {"EDEADLOCK", NULL, EDEADLOCK, CONST_NUMBER},
+#ifdef ECONNREFUSED
+  {"ECONNREFUSED", NULL, ECONNREFUSED, CONST_NUMBER},
 #endif
 #ifdef ENOPKG
   {"ENOPKG", NULL, ENOPKG, CONST_NUMBER},
 #endif
-#ifdef EPIPE
-  {"EPIPE", NULL, EPIPE, CONST_NUMBER},
+#ifdef ENOTCONN
+  {"ENOTCONN", NULL, ENOTCONN, CONST_NUMBER},
+#endif
+#ifdef ENODATA
+  {"ENODATA", NULL, ENODATA, CONST_NUMBER},
+#endif
+#ifdef ETOOMANYREFS
+  {"ETOOMANYREFS", NULL, ETOOMANYREFS, CONST_NUMBER},
 #endif
 #ifdef EADDRINUSE
   {"EADDRINUSE", NULL, EADDRINUSE, CONST_NUMBER},
 #endif
-#ifdef EFAULT
-  {"EFAULT", NULL, EFAULT, CONST_NUMBER},
+#ifdef EL3HLT
+  {"EL3HLT", NULL, EL3HLT, CONST_NUMBER},
 #endif
-#ifdef EDEADLK
-  {"EDEADLK", NULL, EDEADLK, CONST_NUMBER},
-#endif
-#ifdef ENFILE
-  {"ENFILE", NULL, ENFILE, CONST_NUMBER},
-#endif
-#ifdef EAGAIN
-  {"EAGAIN", NULL, EAGAIN, CONST_NUMBER},
-#endif
-#ifdef ECONNABORTED
-  {"ECONNABORTED", NULL, ECONNABORTED, CONST_NUMBER},
-#endif
-#ifdef EMLINK
-  {"EMLINK", NULL, EMLINK, CONST_NUMBER},
-#endif
-#ifdef EBADMSG
-  {"EBADMSG", NULL, EBADMSG, CONST_NUMBER},
-#endif
-#ifdef ERFKILL
-  {"ERFKILL", NULL, ERFKILL, CONST_NUMBER},
-#endif
-#ifdef ENOTTY
-  {"ENOTTY", NULL, ENOTTY, CONST_NUMBER},
-#endif
-#ifdef ELIBACC
-  {"ELIBACC", NULL, ELIBACC, CONST_NUMBER},
-#endif
-#ifdef ETIME
-  {"ETIME", NULL, ETIME, CONST_NUMBER},
+#ifdef EPROTO
+  {"EPROTO", NULL, EPROTO, CONST_NUMBER},
 #endif
 #ifdef ECHILD
   {"ECHILD", NULL, ECHILD, CONST_NUMBER},
 #endif
-#ifdef ENOTRECOVERABLE
-  {"ENOTRECOVERABLE", NULL, ENOTRECOVERABLE, CONST_NUMBER},
+#ifdef EPFNOSUPPORT
+  {"EPFNOSUPPORT", NULL, EPFNOSUPPORT, CONST_NUMBER},
 #endif
-#ifdef EISCONN
-  {"EISCONN", NULL, EISCONN, CONST_NUMBER},
+#ifdef ECHRNG
+  {"ECHRNG", NULL, ECHRNG, CONST_NUMBER},
 #endif
-#ifdef ENAVAIL
-  {"ENAVAIL", NULL, ENAVAIL, CONST_NUMBER},
+#ifdef ENOBUFS
+  {"ENOBUFS", NULL, ENOBUFS, CONST_NUMBER},
 #endif
-#ifdef EDESTADDRREQ
-  {"EDESTADDRREQ", NULL, EDESTADDRREQ, CONST_NUMBER},
+#ifdef ENOMEM
+  {"ENOMEM", NULL, ENOMEM, CONST_NUMBER},
 #endif
-#ifdef EREMOTEIO
-  {"EREMOTEIO", NULL, EREMOTEIO, CONST_NUMBER},
+#ifdef EDEADLOCK
+  {"EDEADLOCK", NULL, EDEADLOCK, CONST_NUMBER},
 #endif
-#ifdef ESTALE
-  {"ESTALE", NULL, ESTALE, CONST_NUMBER},
+#ifdef ETXTBSY
+  {"ETXTBSY", NULL, ETXTBSY, CONST_NUMBER},
 #endif
-#ifdef ESTRPIPE
-  {"ESTRPIPE", NULL, ESTRPIPE, CONST_NUMBER},
+#ifdef EBUSY
+  {"EBUSY", NULL, EBUSY, CONST_NUMBER},
 #endif
-#ifdef EHOSTUNREACH
-  {"EHOSTUNREACH", NULL, EHOSTUNREACH, CONST_NUMBER},
+#ifdef EDOM
+  {"EDOM", NULL, EDOM, CONST_NUMBER},
 #endif
-#ifdef ENOTBLK
-  {"ENOTBLK", NULL, ENOTBLK, CONST_NUMBER},
+#ifdef EPROTONOSUPPORT
+  {"EPROTONOSUPPORT", NULL, EPROTONOSUPPORT, CONST_NUMBER},
 #endif
-#ifdef EEXIST
-  {"EEXIST", NULL, EEXIST, CONST_NUMBER},
+#ifdef EMULTIHOP
+  {"EMULTIHOP", NULL, EMULTIHOP, CONST_NUMBER},
 #endif
-#ifdef ENOTDIR
-  {"ENOTDIR", NULL, ENOTDIR, CONST_NUMBER},
-#endif
-#ifdef EWOULDBLOCK
-  {"EWOULDBLOCK", NULL, EWOULDBLOCK, CONST_NUMBER},
-#endif
-#ifdef EREMCHG
-  {"EREMCHG", NULL, EREMCHG, CONST_NUMBER},
-#endif
-#ifdef ELOOP
-  {"ELOOP", NULL, ELOOP, CONST_NUMBER},
-#endif
-#ifdef ENOTUNIQ
-  {"ENOTUNIQ", NULL, ENOTUNIQ, CONST_NUMBER},
+#ifdef ENAMETOOLONG
+  {"ENAMETOOLONG", NULL, ENAMETOOLONG, CONST_NUMBER},
 #endif
 #ifdef EMEDIUMTYPE
   {"EMEDIUMTYPE", NULL, EMEDIUMTYPE, CONST_NUMBER},
 #endif
-#ifdef ENOLCK
-  {"ENOLCK", NULL, ENOLCK, CONST_NUMBER},
+#ifdef EIO
+  {"EIO", NULL, EIO, CONST_NUMBER},
 #endif
-#ifdef EUNATCH
-  {"EUNATCH", NULL, EUNATCH, CONST_NUMBER},
+#ifdef ELOOP
+  {"ELOOP", NULL, ELOOP, CONST_NUMBER},
 #endif
-#ifdef EPROTONOSUPPORT
-  {"EPROTONOSUPPORT", NULL, EPROTONOSUPPORT, CONST_NUMBER},
+#ifdef EMLINK
+  {"EMLINK", NULL, EMLINK, CONST_NUMBER},
+#endif
+#ifdef ESOCKTNOSUPPORT
+  {"ESOCKTNOSUPPORT", NULL, ESOCKTNOSUPPORT, CONST_NUMBER},
+#endif
+#ifdef EDOTDOT
+  {"EDOTDOT", NULL, EDOTDOT, CONST_NUMBER},
+#endif
+#ifdef EREMCHG
+  {"EREMCHG", NULL, EREMCHG, CONST_NUMBER},
+#endif
+#ifdef EDESTADDRREQ
+  {"EDESTADDRREQ", NULL, EDESTADDRREQ, CONST_NUMBER},
+#endif
+#ifdef ENETRESET
+  {"ENETRESET", NULL, ENETRESET, CONST_NUMBER},
+#endif
+#ifdef ENOKEY
+  {"ENOKEY", NULL, ENOKEY, CONST_NUMBER},
+#endif
+#ifdef EROFS
+  {"EROFS", NULL, EROFS, CONST_NUMBER},
+#endif
+#ifdef ENOSR
+  {"ENOSR", NULL, ENOSR, CONST_NUMBER},
+#endif
+#ifdef ESRMNT
+  {"ESRMNT", NULL, ESRMNT, CONST_NUMBER},
+#endif
+#ifdef EBADFD
+  {"EBADFD", NULL, EBADFD, CONST_NUMBER},
+#endif
+#ifdef ENOTRECOVERABLE
+  {"ENOTRECOVERABLE", NULL, ENOTRECOVERABLE, CONST_NUMBER},
+#endif
+#ifdef EWOULDBLOCK
+  {"EWOULDBLOCK", NULL, EWOULDBLOCK, CONST_NUMBER},
+#endif
+#ifdef EPERM
+  {"EPERM", NULL, EPERM, CONST_NUMBER},
+#endif
+#ifdef EL3RST
+  {"EL3RST", NULL, EL3RST, CONST_NUMBER},
+#endif
+#ifdef ENOLINK
+  {"ENOLINK", NULL, ENOLINK, CONST_NUMBER},
+#endif
+#ifdef EAGAIN
+  {"EAGAIN", NULL, EAGAIN, CONST_NUMBER},
+#endif
+#ifdef ESTALE
+  {"ESTALE", NULL, ESTALE, CONST_NUMBER},
+#endif
+#ifdef EMFILE
+  {"EMFILE", NULL, EMFILE, CONST_NUMBER},
+#endif
+#ifdef ENOTTY
+  {"ENOTTY", NULL, ENOTTY, CONST_NUMBER},
+#endif
+#ifdef EIDRM
+  {"EIDRM", NULL, EIDRM, CONST_NUMBER},
+#endif
+#ifdef EPIPE
+  {"EPIPE", NULL, EPIPE, CONST_NUMBER},
+#endif
+#ifdef ENOEXEC
+  {"ENOEXEC", NULL, ENOEXEC, CONST_NUMBER},
+#endif
+#ifdef ELIBEXEC
+  {"ELIBEXEC", NULL, ELIBEXEC, CONST_NUMBER},
+#endif
+#ifdef ESTRPIPE
+  {"ESTRPIPE", NULL, ESTRPIPE, CONST_NUMBER},
+#endif
+#ifdef ENETUNREACH
+  {"ENETUNREACH", NULL, ENETUNREACH, CONST_NUMBER},
+#endif
+#ifdef ESHUTDOWN
+  {"ESHUTDOWN", NULL, ESHUTDOWN, CONST_NUMBER},
+#endif
+#ifdef EBADSLT
+  {"EBADSLT", NULL, EBADSLT, CONST_NUMBER},
+#endif
+#ifdef EBADR
+  {"EBADR", NULL, EBADR, CONST_NUMBER},
+#endif
+#ifdef EOPNOTSUPP
+  {"EOPNOTSUPP", NULL, EOPNOTSUPP, CONST_NUMBER},
+#endif
+#ifdef EISCONN
+  {"EISCONN", NULL, EISCONN, CONST_NUMBER},
+#endif
+#ifdef ERFKILL
+  {"ERFKILL", NULL, ERFKILL, CONST_NUMBER},
+#endif
+#ifdef ENXIO
+  {"ENXIO", NULL, ENXIO, CONST_NUMBER},
+#endif
+#ifdef EINPROGRESS
+  {"EINPROGRESS", NULL, EINPROGRESS, CONST_NUMBER},
+#endif
+#ifdef ENOANO
+  {"ENOANO", NULL, ENOANO, CONST_NUMBER},
+#endif
+#ifdef EBADF
+  {"EBADF", NULL, EBADF, CONST_NUMBER},
+#endif
+#ifdef EILSEQ
+  {"EILSEQ", NULL, EILSEQ, CONST_NUMBER},
+#endif
+#ifdef ENOTSOCK
+  {"ENOTSOCK", NULL, ENOTSOCK, CONST_NUMBER},
+#endif
+#ifdef ESRCH
+  {"ESRCH", NULL, ESRCH, CONST_NUMBER},
+#endif
+#ifdef ETIMEDOUT
+  {"ETIMEDOUT", NULL, ETIMEDOUT, CONST_NUMBER},
+#endif
+#ifdef ELIBACC
+  {"ELIBACC", NULL, ELIBACC, CONST_NUMBER},
+#endif
+#ifdef ENOMSG
+  {"ENOMSG", NULL, ENOMSG, CONST_NUMBER},
+#endif
+#ifdef ENOSTR
+  {"ENOSTR", NULL, ENOSTR, CONST_NUMBER},
+#endif
+#ifdef ENOSPC
+  {"ENOSPC", NULL, ENOSPC, CONST_NUMBER},
+#endif
+#ifdef ECONNABORTED
+  {"ECONNABORTED", NULL, ECONNABORTED, CONST_NUMBER},
+#endif
+#ifdef ETIME
+  {"ETIME", NULL, ETIME, CONST_NUMBER},
+#endif
+#ifdef ENOTBLK
+  {"ENOTBLK", NULL, ENOTBLK, CONST_NUMBER},
+#endif
+#ifdef E2BIG
+  {"E2BIG", NULL, E2BIG, CONST_NUMBER},
+#endif
+#ifdef ECOMM
+  {"ECOMM", NULL, ECOMM, CONST_NUMBER},
+#endif
+#ifdef EUSERS
+  {"EUSERS", NULL, EUSERS, CONST_NUMBER},
+#endif
+#ifdef ETERM
+  {"ETERM", NULL, ETERM, CONST_NUMBER},
+#endif
+#ifdef ENOMEDIUM
+  {"ENOMEDIUM", NULL, ENOMEDIUM, CONST_NUMBER},
+#endif
+#ifdef ENOPROTOOPT
+  {"ENOPROTOOPT", NULL, ENOPROTOOPT, CONST_NUMBER},
+#endif
+#ifdef ENODEV
+  {"ENODEV", NULL, ENODEV, CONST_NUMBER},
+#endif
+#ifdef EXDEV
+  {"EXDEV", NULL, EXDEV, CONST_NUMBER},
+#endif
+#ifdef ENOSYS
+  {"ENOSYS", NULL, ENOSYS, CONST_NUMBER},
+#endif
+#ifdef EFAULT
+  {"EFAULT", NULL, EFAULT, CONST_NUMBER},
+#endif
+#ifdef EL2NSYNC
+  {"EL2NSYNC", NULL, EL2NSYNC, CONST_NUMBER},
+#endif
+#ifdef EMTHREAD
+  {"EMTHREAD", NULL, EMTHREAD, CONST_NUMBER},
+#endif
+#ifdef ENETDOWN
+  {"ENETDOWN", NULL, ENETDOWN, CONST_NUMBER},
+#endif
+#ifdef ERESTART
+  {"ERESTART", NULL, ERESTART, CONST_NUMBER},
+#endif
+#ifdef EBADMSG
+  {"EBADMSG", NULL, EBADMSG, CONST_NUMBER},
 #endif
 #ifdef EHOSTDOWN
   {"EHOSTDOWN", NULL, EHOSTDOWN, CONST_NUMBER},
@@ -9254,200 +9320,149 @@ static const obj_const obj_ZErrors_constants[] = {
 #ifdef EINTR
   {"EINTR", NULL, EINTR, CONST_NUMBER},
 #endif
-#ifdef ETIMEDOUT
-  {"ETIMEDOUT", NULL, ETIMEDOUT, CONST_NUMBER},
-#endif
-#ifdef EOWNERDEAD
-  {"EOWNERDEAD", NULL, EOWNERDEAD, CONST_NUMBER},
-#endif
-#ifdef EL2HLT
-  {"EL2HLT", NULL, EL2HLT, CONST_NUMBER},
-#endif
-#ifdef ETERM
-  {"ETERM", NULL, ETERM, CONST_NUMBER},
-#endif
-#ifdef EBADSLT
-  {"EBADSLT", NULL, EBADSLT, CONST_NUMBER},
-#endif
-#ifdef ESHUTDOWN
-  {"ESHUTDOWN", NULL, ESHUTDOWN, CONST_NUMBER},
-#endif
-#ifdef EIO
-  {"EIO", NULL, EIO, CONST_NUMBER},
-#endif
-#ifdef ENOANO
-  {"ENOANO", NULL, ENOANO, CONST_NUMBER},
-#endif
-#ifdef EACCES
-  {"EACCES", NULL, EACCES, CONST_NUMBER},
-#endif
-#ifdef EOPNOTSUPP
-  {"EOPNOTSUPP", NULL, EOPNOTSUPP, CONST_NUMBER},
-#endif
-#ifdef EKEYREJECTED
-  {"EKEYREJECTED", NULL, EKEYREJECTED, CONST_NUMBER},
-#endif
-#ifdef ESOCKTNOSUPPORT
-  {"ESOCKTNOSUPPORT", NULL, ESOCKTNOSUPPORT, CONST_NUMBER},
-#endif
-#ifdef ENOKEY
-  {"ENOKEY", NULL, ENOKEY, CONST_NUMBER},
-#endif
-#ifdef ELIBBAD
-  {"ELIBBAD", NULL, ELIBBAD, CONST_NUMBER},
-#endif
-#ifdef ENODEV
-  {"ENODEV", NULL, ENODEV, CONST_NUMBER},
-#endif
-#ifdef ECANCELED
-  {"ECANCELED", NULL, ECANCELED, CONST_NUMBER},
-#endif
-#ifdef ENOBUFS
-  {"ENOBUFS", NULL, ENOBUFS, CONST_NUMBER},
-#endif
-#ifdef ENETUNREACH
-  {"ENETUNREACH", NULL, ENETUNREACH, CONST_NUMBER},
-#endif
-#ifdef EL3HLT
-  {"EL3HLT", NULL, EL3HLT, CONST_NUMBER},
-#endif
-#ifdef ENXIO
-  {"ENXIO", NULL, ENXIO, CONST_NUMBER},
-#endif
-#ifdef ENETRESET
-  {"ENETRESET", NULL, ENETRESET, CONST_NUMBER},
-#endif
-#ifdef ENOENT
-  {"ENOENT", NULL, ENOENT, CONST_NUMBER},
-#endif
-#ifdef ENOMSG
-  {"ENOMSG", NULL, ENOMSG, CONST_NUMBER},
-#endif
-#ifdef EL3RST
-  {"EL3RST", NULL, EL3RST, CONST_NUMBER},
-#endif
-#ifdef EMFILE
-  {"EMFILE", NULL, EMFILE, CONST_NUMBER},
-#endif
-#ifdef ENOEXEC
-  {"ENOEXEC", NULL, ENOEXEC, CONST_NUMBER},
-#endif
-#ifdef ENOTEMPTY
-  {"ENOTEMPTY", NULL, ENOTEMPTY, CONST_NUMBER},
-#endif
-#ifdef EMTHREAD
-  {"EMTHREAD", NULL, EMTHREAD, CONST_NUMBER},
-#endif
-#ifdef EISNAM
-  {"EISNAM", NULL, EISNAM, CONST_NUMBER},
-#endif
-#ifdef EINVAL
-  {"EINVAL", NULL, EINVAL, CONST_NUMBER},
-#endif
-#ifdef ERANGE
-  {"ERANGE", NULL, ERANGE, CONST_NUMBER},
-#endif
-#ifdef E2BIG
-  {"E2BIG", NULL, E2BIG, CONST_NUMBER},
-#endif
-#ifdef ENOTNAM
-  {"ENOTNAM", NULL, ENOTNAM, CONST_NUMBER},
-#endif
-#ifdef ENONET
-  {"ENONET", NULL, ENONET, CONST_NUMBER},
-#endif
-#ifdef EADDRNOTAVAIL
-  {"EADDRNOTAVAIL", NULL, EADDRNOTAVAIL, CONST_NUMBER},
-#endif
-#ifdef ENOSYS
-  {"ENOSYS", NULL, ENOSYS, CONST_NUMBER},
-#endif
-#ifdef EINPROGRESS
-  {"EINPROGRESS", NULL, EINPROGRESS, CONST_NUMBER},
-#endif
-#ifdef EBUSY
-  {"EBUSY", NULL, EBUSY, CONST_NUMBER},
-#endif
-#ifdef EBADFD
-  {"EBADFD", NULL, EBADFD, CONST_NUMBER},
-#endif
-#ifdef EISDIR
-  {"EISDIR", NULL, EISDIR, CONST_NUMBER},
+#ifdef EOVERFLOW
+  {"EOVERFLOW", NULL, EOVERFLOW, CONST_NUMBER},
 #endif
 #ifdef EADV
   {"EADV", NULL, EADV, CONST_NUMBER},
 #endif
+#ifdef ELNRNG
+  {"ELNRNG", NULL, ELNRNG, CONST_NUMBER},
+#endif
+#ifdef ELIBBAD
+  {"ELIBBAD", NULL, ELIBBAD, CONST_NUMBER},
+#endif
+#ifdef ERANGE
+  {"ERANGE", NULL, ERANGE, CONST_NUMBER},
+#endif
+#ifdef EBADRQC
+  {"EBADRQC", NULL, EBADRQC, CONST_NUMBER},
+#endif
+#ifdef ENOLCK
+  {"ENOLCK", NULL, ENOLCK, CONST_NUMBER},
+#endif
+#ifdef EEXIST
+  {"EEXIST", NULL, EEXIST, CONST_NUMBER},
+#endif
 #ifdef ECONNRESET
   {"ECONNRESET", NULL, ECONNRESET, CONST_NUMBER},
 #endif
-#ifdef ENOSPC
-  {"ENOSPC", NULL, ENOSPC, CONST_NUMBER},
+#ifdef EHOSTUNREACH
+  {"EHOSTUNREACH", NULL, EHOSTUNREACH, CONST_NUMBER},
 #endif
-#ifdef ETOOMANYREFS
-  {"ETOOMANYREFS", NULL, ETOOMANYREFS, CONST_NUMBER},
+#ifdef ENOTUNIQ
+  {"ENOTUNIQ", NULL, ENOTUNIQ, CONST_NUMBER},
 #endif
-#ifdef EXFULL
-  {"EXFULL", NULL, EXFULL, CONST_NUMBER},
+#ifdef EKEYREJECTED
+  {"EKEYREJECTED", NULL, EKEYREJECTED, CONST_NUMBER},
 #endif
-#ifdef EPROTOTYPE
-  {"EPROTOTYPE", NULL, EPROTOTYPE, CONST_NUMBER},
-#endif
-#ifdef ESRCH
-  {"ESRCH", NULL, ESRCH, CONST_NUMBER},
-#endif
-#ifdef EMSGSIZE
-  {"EMSGSIZE", NULL, EMSGSIZE, CONST_NUMBER},
-#endif
-#ifdef EAFNOSUPPORT
-  {"EAFNOSUPPORT", NULL, EAFNOSUPPORT, CONST_NUMBER},
-#endif
-#ifdef ESPIPE
-  {"ESPIPE", NULL, ESPIPE, CONST_NUMBER},
-#endif
-#ifdef ENETDOWN
-  {"ENETDOWN", NULL, ENETDOWN, CONST_NUMBER},
-#endif
-#ifdef ECHRNG
-  {"ECHRNG", NULL, ECHRNG, CONST_NUMBER},
-#endif
-#ifdef ENOMEM
-  {"ENOMEM", NULL, ENOMEM, CONST_NUMBER},
-#endif
-#ifdef ECONNREFUSED
-  {"ECONNREFUSED", NULL, ECONNREFUSED, CONST_NUMBER},
-#endif
-#ifdef ETXTBSY
-  {"ETXTBSY", NULL, ETXTBSY, CONST_NUMBER},
+#ifdef EKEYREVOKED
+  {"EKEYREVOKED", NULL, EKEYREVOKED, CONST_NUMBER},
 #endif
 #ifdef EKEYEXPIRED
   {"EKEYEXPIRED", NULL, EKEYEXPIRED, CONST_NUMBER},
 #endif
-#ifdef ENOMEDIUM
-  {"ENOMEDIUM", NULL, ENOMEDIUM, CONST_NUMBER},
+#ifdef ECANCELED
+  {"ECANCELED", NULL, ECANCELED, CONST_NUMBER},
 #endif
-#ifdef EUSERS
-  {"EUSERS", NULL, EUSERS, CONST_NUMBER},
+#ifdef EINVAL
+  {"EINVAL", NULL, EINVAL, CONST_NUMBER},
 #endif
-#ifdef EILSEQ
-  {"EILSEQ", NULL, EILSEQ, CONST_NUMBER},
+#ifdef ENAVAIL
+  {"ENAVAIL", NULL, ENAVAIL, CONST_NUMBER},
 #endif
-#ifdef ELIBEXEC
-  {"ELIBEXEC", NULL, ELIBEXEC, CONST_NUMBER},
+#ifdef ENONET
+  {"ENONET", NULL, ENONET, CONST_NUMBER},
+#endif
+#ifdef ELIBSCN
+  {"ELIBSCN", NULL, ELIBSCN, CONST_NUMBER},
+#endif
+#ifdef EFBIG
+  {"EFBIG", NULL, EFBIG, CONST_NUMBER},
+#endif
+#ifdef EREMOTE
+  {"EREMOTE", NULL, EREMOTE, CONST_NUMBER},
+#endif
+#ifdef EDQUOT
+  {"EDQUOT", NULL, EDQUOT, CONST_NUMBER},
+#endif
+#ifdef ENOTEMPTY
+  {"ENOTEMPTY", NULL, ENOTEMPTY, CONST_NUMBER},
+#endif
+#ifdef ENOENT
+  {"ENOENT", NULL, ENOENT, CONST_NUMBER},
+#endif
+#ifdef EISNAM
+  {"EISNAM", NULL, EISNAM, CONST_NUMBER},
+#endif
+#ifdef EREMOTEIO
+  {"EREMOTEIO", NULL, EREMOTEIO, CONST_NUMBER},
+#endif
+#ifdef EACCES
+  {"EACCES", NULL, EACCES, CONST_NUMBER},
+#endif
+#ifdef ENOCOMPATPROTO
+  {"ENOCOMPATPROTO", NULL, ENOCOMPATPROTO, CONST_NUMBER},
+#endif
+#ifdef ENOTNAM
+  {"ENOTNAM", NULL, ENOTNAM, CONST_NUMBER},
+#endif
+#ifdef ESPIPE
+  {"ESPIPE", NULL, ESPIPE, CONST_NUMBER},
+#endif
+#ifdef EUCLEAN
+  {"EUCLEAN", NULL, EUCLEAN, CONST_NUMBER},
+#endif
+#ifdef ELIBMAX
+  {"ELIBMAX", NULL, ELIBMAX, CONST_NUMBER},
+#endif
+#ifdef EDEADLK
+  {"EDEADLK", NULL, EDEADLK, CONST_NUMBER},
 #endif
 #ifdef EALREADY
   {"EALREADY", NULL, EALREADY, CONST_NUMBER},
 #endif
-#ifdef ENAMETOOLONG
-  {"ENAMETOOLONG", NULL, ENAMETOOLONG, CONST_NUMBER},
+#ifdef EFSM
+  {"EFSM", NULL, EFSM, CONST_NUMBER},
 #endif
-#ifdef EXDEV
-  {"EXDEV", NULL, EXDEV, CONST_NUMBER},
+#ifdef EBFONT
+  {"EBFONT", NULL, EBFONT, CONST_NUMBER},
 #endif
-#ifdef EBADF
-  {"EBADF", NULL, EBADF, CONST_NUMBER},
+#ifdef EXFULL
+  {"EXFULL", NULL, EXFULL, CONST_NUMBER},
 #endif
-#ifdef EL2NSYNC
-  {"EL2NSYNC", NULL, EL2NSYNC, CONST_NUMBER},
+#ifdef EL2HLT
+  {"EL2HLT", NULL, EL2HLT, CONST_NUMBER},
+#endif
+#ifdef EUNATCH
+  {"EUNATCH", NULL, EUNATCH, CONST_NUMBER},
+#endif
+#ifdef EISDIR
+  {"EISDIR", NULL, EISDIR, CONST_NUMBER},
+#endif
+#ifdef EMSGSIZE
+  {"EMSGSIZE", NULL, EMSGSIZE, CONST_NUMBER},
+#endif
+#ifdef ENFILE
+  {"ENFILE", NULL, ENFILE, CONST_NUMBER},
+#endif
+#ifdef EADDRNOTAVAIL
+  {"EADDRNOTAVAIL", NULL, EADDRNOTAVAIL, CONST_NUMBER},
+#endif
+#ifdef EAFNOSUPPORT
+  {"EAFNOSUPPORT", NULL, EAFNOSUPPORT, CONST_NUMBER},
+#endif
+#ifdef ENOTDIR
+  {"ENOTDIR", NULL, ENOTDIR, CONST_NUMBER},
+#endif
+#ifdef EPROTOTYPE
+  {"EPROTOTYPE", NULL, EPROTOTYPE, CONST_NUMBER},
+#endif
+#ifdef EOWNERDEAD
+  {"EOWNERDEAD", NULL, EOWNERDEAD, CONST_NUMBER},
+#endif
+#ifdef EBADE
+  {"EBADE", NULL, EBADE, CONST_NUMBER},
 #endif
   {NULL, NULL, 0.0 , 0}
 };
@@ -9942,86 +9957,122 @@ static const luaL_Reg zmq_function[] = {
 };
 
 static const obj_const zmq_constants[] = {
-#ifdef ZMQ_PLAIN
-  {"PLAIN", NULL, ZMQ_PLAIN, CONST_NUMBER},
+#ifdef ZMQ_UNSUBSCRIBE
+  {"UNSUBSCRIBE", NULL, ZMQ_UNSUBSCRIBE, CONST_NUMBER},
 #endif
-#ifdef ZMQ_LINGER
-  {"LINGER", NULL, ZMQ_LINGER, CONST_NUMBER},
+#ifdef ZMQ_CURVE_SERVER
+  {"CURVE_SERVER", NULL, ZMQ_CURVE_SERVER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_EVENT_CONNECTED
-  {"EVENT_CONNECTED", NULL, ZMQ_EVENT_CONNECTED, CONST_NUMBER},
+#ifdef ZMQ_XPUB_VERBOSE
+  {"XPUB_VERBOSE", NULL, ZMQ_XPUB_VERBOSE, CONST_NUMBER},
 #endif
-#ifdef ZMQ_EVENT_ACCEPTED
-  {"EVENT_ACCEPTED", NULL, ZMQ_EVENT_ACCEPTED, CONST_NUMBER},
+#ifdef ZMQ_ZAP_DOMAIN
+  {"ZAP_DOMAIN", NULL, ZMQ_ZAP_DOMAIN, CONST_NUMBER},
 #endif
-#ifdef ZMQ_XSUB
-  {"XSUB", NULL, ZMQ_XSUB, CONST_NUMBER},
+#ifdef ZMQ_FORWARDER
+  {"FORWARDER", NULL, ZMQ_FORWARDER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_MAX_VSM_SIZE
-  {"MAX_VSM_SIZE", NULL, ZMQ_MAX_VSM_SIZE, CONST_NUMBER},
+#ifdef ZMQ_POLL_MSEC
+  {"POLL_MSEC", NULL, ZMQ_POLL_MSEC, CONST_NUMBER},
 #endif
-#ifdef ZMQ_DEALER
-  {"DEALER", NULL, ZMQ_DEALER, CONST_NUMBER},
+#ifdef ZMQ_RCVMORE
+  {"RCVMORE", NULL, ZMQ_RCVMORE, CONST_NUMBER},
 #endif
-#ifdef ZMQ_ROUTER
-  {"ROUTER", NULL, ZMQ_ROUTER, CONST_NUMBER},
+#ifdef ZMQ_IDENTITY
+  {"IDENTITY", NULL, ZMQ_IDENTITY, CONST_NUMBER},
 #endif
-#ifdef ZMQ_NOBLOCK
-  {"NOBLOCK", NULL, ZMQ_NOBLOCK, CONST_NUMBER},
-#endif
-#ifdef ZMQ_RATE
-  {"RATE", NULL, ZMQ_RATE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_CONNECT_RETRIED
-  {"EVENT_CONNECT_RETRIED", NULL, ZMQ_EVENT_CONNECT_RETRIED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_IO_THREADS
-  {"IO_THREADS", NULL, ZMQ_IO_THREADS, CONST_NUMBER},
-#endif
-#ifdef ZMQ_FD
-  {"FD", NULL, ZMQ_FD, CONST_NUMBER},
-#endif
-#ifdef ZMQ_TCP_KEEPALIVE_CNT
-  {"TCP_KEEPALIVE_CNT", NULL, ZMQ_TCP_KEEPALIVE_CNT, CONST_NUMBER},
-#endif
-#ifdef ZMQ_BACKLOG
-  {"BACKLOG", NULL, ZMQ_BACKLOG, CONST_NUMBER},
+#ifdef ZMQ_REQ_RELAXED
+  {"REQ_RELAXED", NULL, ZMQ_REQ_RELAXED, CONST_NUMBER},
 #endif
 #ifdef ZMQ_EVENT_MONITOR_STOPPED
   {"EVENT_MONITOR_STOPPED", NULL, ZMQ_EVENT_MONITOR_STOPPED, CONST_NUMBER},
 #endif
-#ifdef ZMQ_AFFINITY
-  {"AFFINITY", NULL, ZMQ_AFFINITY, CONST_NUMBER},
-#endif
-#ifdef ZMQ_IPV6
-  {"IPV6", NULL, ZMQ_IPV6, CONST_NUMBER},
-#endif
 #ifdef ZMQ_EVENT_ALL
   {"EVENT_ALL", NULL, ZMQ_EVENT_ALL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SUBSCRIBE
+  {"SUBSCRIBE", NULL, ZMQ_SUBSCRIBE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_ACCEPTED
+  {"EVENT_ACCEPTED", NULL, ZMQ_EVENT_ACCEPTED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MAX_VSM_SIZE
+  {"MAX_VSM_SIZE", NULL, ZMQ_MAX_VSM_SIZE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MAX_SOCKETS
+  {"MAX_SOCKETS", NULL, ZMQ_MAX_SOCKETS, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PLAIN
+  {"PLAIN", NULL, ZMQ_PLAIN, CONST_NUMBER},
+#endif
+#ifdef ZMQ_XREQ
+  {"XREQ", NULL, ZMQ_XREQ, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_CLOSE_FAILED
+  {"EVENT_CLOSE_FAILED", NULL, ZMQ_EVENT_CLOSE_FAILED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_POLLIN
+  {"POLLIN", NULL, ZMQ_POLLIN, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_ACCEPT_FAILED
+  {"EVENT_ACCEPT_FAILED", NULL, ZMQ_EVENT_ACCEPT_FAILED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_RATE
+  {"RATE", NULL, ZMQ_RATE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SUB
+  {"SUB", NULL, ZMQ_SUB, CONST_NUMBER},
+#endif
+#ifdef ZMQ_RECONNECT_IVL_MSEC
+  {"RECONNECT_IVL_MSEC", NULL, ZMQ_RECONNECT_IVL_MSEC, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PUB
+  {"PUB", NULL, ZMQ_PUB, CONST_NUMBER},
+#endif
+#ifdef ZMQ_RCVHWM
+  {"RCVHWM", NULL, ZMQ_RCVHWM, CONST_NUMBER},
+#endif
+#ifdef ZMQ_VSM
+  {"VSM", NULL, ZMQ_VSM, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PLAIN_SERVER
+  {"PLAIN_SERVER", NULL, ZMQ_PLAIN_SERVER, CONST_NUMBER},
+#endif
+#ifdef ZMQ_NOBLOCK
+  {"NOBLOCK", NULL, ZMQ_NOBLOCK, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MSG_MORE
+  {"MSG_MORE", NULL, ZMQ_MSG_MORE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SNDMORE
+  {"SNDMORE", NULL, ZMQ_SNDMORE, CONST_NUMBER},
 #endif
 #ifdef ZMQ_RECONNECT_IVL_MAX
   {"RECONNECT_IVL_MAX", NULL, ZMQ_RECONNECT_IVL_MAX, CONST_NUMBER},
 #endif
-#ifdef ZMQ_SNDTIMEO
-  {"SNDTIMEO", NULL, ZMQ_SNDTIMEO, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_CLOSED
-  {"EVENT_CLOSED", NULL, ZMQ_EVENT_CLOSED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_REQ
-  {"REQ", NULL, ZMQ_REQ, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PLAIN_PASSWORD
-  {"PLAIN_PASSWORD", NULL, ZMQ_PLAIN_PASSWORD, CONST_NUMBER},
-#endif
-#ifdef ZMQ_RCVLABEL
-  {"RCVLABEL", NULL, ZMQ_RCVLABEL, CONST_NUMBER},
-#endif
-#ifdef ZMQ_REQ_CORRELATE
-  {"REQ_CORRELATE", NULL, ZMQ_REQ_CORRELATE, CONST_NUMBER},
+#ifdef ZMQ_PULL
+  {"PULL", NULL, ZMQ_PULL, CONST_NUMBER},
 #endif
 #ifdef ZMQ_XREP
   {"XREP", NULL, ZMQ_XREP, CONST_NUMBER},
+#endif
+#ifdef ZMQ_POLLERR
+  {"POLLERR", NULL, ZMQ_POLLERR, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PAIR
+  {"PAIR", NULL, ZMQ_PAIR, CONST_NUMBER},
+#endif
+#ifdef ZMQ_IPV6
+  {"IPV6", NULL, ZMQ_IPV6, CONST_NUMBER},
+#endif
+#ifdef ZMQ_TCP_KEEPALIVE_CNT
+  {"TCP_KEEPALIVE_CNT", NULL, ZMQ_TCP_KEEPALIVE_CNT, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PLAIN_USERNAME
+  {"PLAIN_USERNAME", NULL, ZMQ_PLAIN_USERNAME, CONST_NUMBER},
+#endif
+#ifdef ZMQ_REP
+  {"REP", NULL, ZMQ_REP, CONST_NUMBER},
 #endif
 #ifdef ZMQ_XPUB
   {"XPUB", NULL, ZMQ_XPUB, CONST_NUMBER},
@@ -10029,95 +10080,110 @@ static const obj_const zmq_constants[] = {
 #ifdef ZMQ_DONTWAIT
   {"DONTWAIT", NULL, ZMQ_DONTWAIT, CONST_NUMBER},
 #endif
-#ifdef ZMQ_MSG_MORE
-  {"MSG_MORE", NULL, ZMQ_MSG_MORE, CONST_NUMBER},
+#ifdef ZMQ_SNDBUF
+  {"SNDBUF", NULL, ZMQ_SNDBUF, CONST_NUMBER},
 #endif
-#ifdef ZMQ_TCP_KEEPALIVE_INTVL
-  {"TCP_KEEPALIVE_INTVL", NULL, ZMQ_TCP_KEEPALIVE_INTVL, CONST_NUMBER},
+#ifdef ZMQ_LINGER
+  {"LINGER", NULL, ZMQ_LINGER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_CURVE_SERVER
-  {"CURVE_SERVER", NULL, ZMQ_CURVE_SERVER, CONST_NUMBER},
+#ifdef ZMQ_EVENT_LISTENING
+  {"EVENT_LISTENING", NULL, ZMQ_EVENT_LISTENING, CONST_NUMBER},
 #endif
-#ifdef ZMQ_POLLERR
-  {"POLLERR", NULL, ZMQ_POLLERR, CONST_NUMBER},
+#ifdef ZMQ_EVENT_CONNECTED
+  {"EVENT_CONNECTED", NULL, ZMQ_EVENT_CONNECTED, CONST_NUMBER},
 #endif
-#ifdef ZMQ_MCAST_LOOP
-  {"MCAST_LOOP", NULL, ZMQ_MCAST_LOOP, CONST_NUMBER},
-#endif
-#ifdef ZMQ_TYPE
-  {"TYPE", NULL, ZMQ_TYPE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_RCVMORE
-  {"RCVMORE", NULL, ZMQ_RCVMORE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_MAXMSGSIZE
-  {"MAXMSGSIZE", NULL, ZMQ_MAXMSGSIZE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PULL
-  {"PULL", NULL, ZMQ_PULL, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PLAIN_SERVER
-  {"PLAIN_SERVER", NULL, ZMQ_PLAIN_SERVER, CONST_NUMBER},
-#endif
-#ifdef ZMQ_CURVE_SECRETKEY
-  {"CURVE_SECRETKEY", NULL, ZMQ_CURVE_SECRETKEY, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_DISCONNECTED
-  {"EVENT_DISCONNECTED", NULL, ZMQ_EVENT_DISCONNECTED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PAIR
-  {"PAIR", NULL, ZMQ_PAIR, CONST_NUMBER},
-#endif
-#ifdef ZMQ_FORWARDER
-  {"FORWARDER", NULL, ZMQ_FORWARDER, CONST_NUMBER},
-#endif
-#ifdef ZMQ_IDENTITY
-  {"IDENTITY", NULL, ZMQ_IDENTITY, CONST_NUMBER},
-#endif
-#ifdef ZMQ_MSG_SHARED
-  {"MSG_SHARED", NULL, ZMQ_MSG_SHARED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_MULTICAST_HOPS
-  {"MULTICAST_HOPS", NULL, ZMQ_MULTICAST_HOPS, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_CONNECT_DELAYED
-  {"EVENT_CONNECT_DELAYED", NULL, ZMQ_EVENT_CONNECT_DELAYED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PUSH
-  {"PUSH", NULL, ZMQ_PUSH, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SNDHWM
-  {"SNDHWM", NULL, ZMQ_SNDHWM, CONST_NUMBER},
-#endif
-#ifdef ZMQ_STREAMER
-  {"STREAMER", NULL, ZMQ_STREAMER, CONST_NUMBER},
-#endif
-#ifdef ZMQ_CURVE_PUBLICKEY
-  {"CURVE_PUBLICKEY", NULL, ZMQ_CURVE_PUBLICKEY, CONST_NUMBER},
-#endif
-#ifdef ZMQ_LAST_ENDPOINT
-  {"LAST_ENDPOINT", NULL, ZMQ_LAST_ENDPOINT, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SWAP
-  {"SWAP", NULL, ZMQ_SWAP, CONST_NUMBER},
-#endif
-#ifdef ZMQ_ROUTER_MANDATORY
-  {"ROUTER_MANDATORY", NULL, ZMQ_ROUTER_MANDATORY, CONST_NUMBER},
+#ifdef ZMQ_DELIMITER
+  {"DELIMITER", NULL, ZMQ_DELIMITER, CONST_NUMBER},
 #endif
 #ifdef ZMQ_RCVBUF
   {"RCVBUF", NULL, ZMQ_RCVBUF, CONST_NUMBER},
 #endif
-#ifdef ZMQ_EVENT_BIND_FAILED
-  {"EVENT_BIND_FAILED", NULL, ZMQ_EVENT_BIND_FAILED, CONST_NUMBER},
+#ifdef ZMQ_EVENTS
+  {"EVENTS", NULL, ZMQ_EVENTS, CONST_NUMBER},
 #endif
-#ifdef ZMQ_ZAP_DOMAIN
-  {"ZAP_DOMAIN", NULL, ZMQ_ZAP_DOMAIN, CONST_NUMBER},
+#ifdef ZMQ_DEALER
+  {"DEALER", NULL, ZMQ_DEALER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_PLAIN_USERNAME
-  {"PLAIN_USERNAME", NULL, ZMQ_PLAIN_USERNAME, CONST_NUMBER},
+#ifdef ZMQ_TYPE
+  {"TYPE", NULL, ZMQ_TYPE, CONST_NUMBER},
 #endif
-#ifdef ZMQ_EVENT_CLOSE_FAILED
-  {"EVENT_CLOSE_FAILED", NULL, ZMQ_EVENT_CLOSE_FAILED, CONST_NUMBER},
+#ifdef ZMQ_IMMEDIATE
+  {"IMMEDIATE", NULL, ZMQ_IMMEDIATE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MULTICAST_HOPS
+  {"MULTICAST_HOPS", NULL, ZMQ_MULTICAST_HOPS, CONST_NUMBER},
+#endif
+#ifdef ZMQ_RECOVERY_IVL
+  {"RECOVERY_IVL", NULL, ZMQ_RECOVERY_IVL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_NULL
+  {"NULL", NULL, ZMQ_NULL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SWAP
+  {"SWAP", NULL, ZMQ_SWAP, CONST_NUMBER},
+#endif
+#ifdef ZMQ_XSUB
+  {"XSUB", NULL, ZMQ_XSUB, CONST_NUMBER},
+#endif
+#ifdef ZMQ_AFFINITY
+  {"AFFINITY", NULL, ZMQ_AFFINITY, CONST_NUMBER},
+#endif
+#ifdef ZMQ_RECONNECT_IVL
+  {"RECONNECT_IVL", NULL, ZMQ_RECONNECT_IVL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_CONNECT_RETRIED
+  {"EVENT_CONNECT_RETRIED", NULL, ZMQ_EVENT_CONNECT_RETRIED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_TCP_KEEPALIVE
+  {"TCP_KEEPALIVE", NULL, ZMQ_TCP_KEEPALIVE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_LAST_ENDPOINT
+  {"LAST_ENDPOINT", NULL, ZMQ_LAST_ENDPOINT, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SNDTIMEO
+  {"SNDTIMEO", NULL, ZMQ_SNDTIMEO, CONST_NUMBER},
+#endif
+#ifdef ZMQ_QUEUE
+  {"QUEUE", NULL, ZMQ_QUEUE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_ROUTER
+  {"ROUTER", NULL, ZMQ_ROUTER, CONST_NUMBER},
+#endif
+#ifdef ZMQ_CONFLATE
+  {"CONFLATE", NULL, ZMQ_CONFLATE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_TCP_KEEPALIVE_IDLE
+  {"TCP_KEEPALIVE_IDLE", NULL, ZMQ_TCP_KEEPALIVE_IDLE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PUSH
+  {"PUSH", NULL, ZMQ_PUSH, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MAXMSGSIZE
+  {"MAXMSGSIZE", NULL, ZMQ_MAXMSGSIZE, CONST_NUMBER},
+#endif
+#ifdef ZMQ_ROUTER_MANDATORY
+  {"ROUTER_MANDATORY", NULL, ZMQ_ROUTER_MANDATORY, CONST_NUMBER},
+#endif
+#ifdef ZMQ_FD
+  {"FD", NULL, ZMQ_FD, CONST_NUMBER},
+#endif
+#ifdef ZMQ_SNDLABEL
+  {"SNDLABEL", NULL, ZMQ_SNDLABEL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_TCP_KEEPALIVE_INTVL
+  {"TCP_KEEPALIVE_INTVL", NULL, ZMQ_TCP_KEEPALIVE_INTVL, CONST_NUMBER},
+#endif
+#ifdef ZMQ_PLAIN_PASSWORD
+  {"PLAIN_PASSWORD", NULL, ZMQ_PLAIN_PASSWORD, CONST_NUMBER},
+#endif
+#ifdef ZMQ_POLLOUT
+  {"POLLOUT", NULL, ZMQ_POLLOUT, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MCAST_LOOP
+  {"MCAST_LOOP", NULL, ZMQ_MCAST_LOOP, CONST_NUMBER},
+#endif
+#ifdef ZMQ_CURVE
+  {"CURVE", NULL, ZMQ_CURVE, CONST_NUMBER},
 #endif
 #ifdef ZMQ_RCVTIMEO
   {"RCVTIMEO", NULL, ZMQ_RCVTIMEO, CONST_NUMBER},
@@ -10125,113 +10191,62 @@ static const obj_const zmq_constants[] = {
 #ifdef ZMQ_TCP_ACCEPT_FILTER
   {"TCP_ACCEPT_FILTER", NULL, ZMQ_TCP_ACCEPT_FILTER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_IMMEDIATE
-  {"IMMEDIATE", NULL, ZMQ_IMMEDIATE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_VSM
-  {"VSM", NULL, ZMQ_VSM, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_LISTENING
-  {"EVENT_LISTENING", NULL, ZMQ_EVENT_LISTENING, CONST_NUMBER},
-#endif
-#ifdef ZMQ_XPUB_VERBOSE
-  {"XPUB_VERBOSE", NULL, ZMQ_XPUB_VERBOSE, CONST_NUMBER},
-#endif
 #ifdef ZMQ_ROUTER_RAW
   {"ROUTER_RAW", NULL, ZMQ_ROUTER_RAW, CONST_NUMBER},
 #endif
-#ifdef ZMQ_XREQ
-  {"XREQ", NULL, ZMQ_XREQ, CONST_NUMBER},
+#ifdef ZMQ_SNDHWM
+  {"SNDHWM", NULL, ZMQ_SNDHWM, CONST_NUMBER},
 #endif
-#ifdef ZMQ_SNDBUF
-  {"SNDBUF", NULL, ZMQ_SNDBUF, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENT_ACCEPT_FAILED
-  {"EVENT_ACCEPT_FAILED", NULL, ZMQ_EVENT_ACCEPT_FAILED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_DELIMITER
-  {"DELIMITER", NULL, ZMQ_DELIMITER, CONST_NUMBER},
-#endif
-#ifdef ZMQ_EVENTS
-  {"EVENTS", NULL, ZMQ_EVENTS, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SNDMORE
-  {"SNDMORE", NULL, ZMQ_SNDMORE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_PUB
-  {"PUB", NULL, ZMQ_PUB, CONST_NUMBER},
-#endif
-#ifdef ZMQ_RECOVERY_IVL
-  {"RECOVERY_IVL", NULL, ZMQ_RECOVERY_IVL, CONST_NUMBER},
-#endif
-#ifdef ZMQ_RECONNECT_IVL_MSEC
-  {"RECONNECT_IVL_MSEC", NULL, ZMQ_RECONNECT_IVL_MSEC, CONST_NUMBER},
-#endif
-#ifdef ZMQ_POLLIN
-  {"POLLIN", NULL, ZMQ_POLLIN, CONST_NUMBER},
-#endif
-#ifdef ZMQ_CURVE
-  {"CURVE", NULL, ZMQ_CURVE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SUB
-  {"SUB", NULL, ZMQ_SUB, CONST_NUMBER},
+#ifdef ZMQ_REQ
+  {"REQ", NULL, ZMQ_REQ, CONST_NUMBER},
 #endif
 #ifdef ZMQ_CURVE_SERVERKEY
   {"CURVE_SERVERKEY", NULL, ZMQ_CURVE_SERVERKEY, CONST_NUMBER},
 #endif
-#ifdef ZMQ_CONFLATE
-  {"CONFLATE", NULL, ZMQ_CONFLATE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_HWM
-  {"HWM", NULL, ZMQ_HWM, CONST_NUMBER},
-#endif
-#ifdef ZMQ_REQ_RELAXED
-  {"REQ_RELAXED", NULL, ZMQ_REQ_RELAXED, CONST_NUMBER},
-#endif
-#ifdef ZMQ_MAX_SOCKETS
-  {"MAX_SOCKETS", NULL, ZMQ_MAX_SOCKETS, CONST_NUMBER},
-#endif
-#ifdef ZMQ_UNSUBSCRIBE
-  {"UNSUBSCRIBE", NULL, ZMQ_UNSUBSCRIBE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_TCP_KEEPALIVE_IDLE
-  {"TCP_KEEPALIVE_IDLE", NULL, ZMQ_TCP_KEEPALIVE_IDLE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SNDLABEL
-  {"SNDLABEL", NULL, ZMQ_SNDLABEL, CONST_NUMBER},
-#endif
-#ifdef ZMQ_QUEUE
-  {"QUEUE", NULL, ZMQ_QUEUE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_MECHANISM
-  {"MECHANISM", NULL, ZMQ_MECHANISM, CONST_NUMBER},
-#endif
-#ifdef ZMQ_TCP_KEEPALIVE
-  {"TCP_KEEPALIVE", NULL, ZMQ_TCP_KEEPALIVE, CONST_NUMBER},
-#endif
-#ifdef ZMQ_NULL
-  {"NULL", NULL, ZMQ_NULL, CONST_NUMBER},
-#endif
-#ifdef ZMQ_SUBSCRIBE
-  {"SUBSCRIBE", NULL, ZMQ_SUBSCRIBE, CONST_NUMBER},
+#ifdef ZMQ_MSG_SHARED
+  {"MSG_SHARED", NULL, ZMQ_MSG_SHARED, CONST_NUMBER},
 #endif
 #ifdef ZMQ_PROBE_ROUTER
   {"PROBE_ROUTER", NULL, ZMQ_PROBE_ROUTER, CONST_NUMBER},
 #endif
-#ifdef ZMQ_RCVHWM
-  {"RCVHWM", NULL, ZMQ_RCVHWM, CONST_NUMBER},
+#ifdef ZMQ_REQ_CORRELATE
+  {"REQ_CORRELATE", NULL, ZMQ_REQ_CORRELATE, CONST_NUMBER},
 #endif
-#ifdef ZMQ_REP
-  {"REP", NULL, ZMQ_REP, CONST_NUMBER},
+#ifdef ZMQ_RCVLABEL
+  {"RCVLABEL", NULL, ZMQ_RCVLABEL, CONST_NUMBER},
 #endif
-#ifdef ZMQ_RECONNECT_IVL
-  {"RECONNECT_IVL", NULL, ZMQ_RECONNECT_IVL, CONST_NUMBER},
+#ifdef ZMQ_EVENT_DISCONNECTED
+  {"EVENT_DISCONNECTED", NULL, ZMQ_EVENT_DISCONNECTED, CONST_NUMBER},
 #endif
-#ifdef ZMQ_POLLOUT
-  {"POLLOUT", NULL, ZMQ_POLLOUT, CONST_NUMBER},
+#ifdef ZMQ_IO_THREADS
+  {"IO_THREADS", NULL, ZMQ_IO_THREADS, CONST_NUMBER},
 #endif
-#ifdef ZMQ_POLL_MSEC
-  {"POLL_MSEC", NULL, ZMQ_POLL_MSEC, CONST_NUMBER},
+#ifdef ZMQ_EVENT_CLOSED
+  {"EVENT_CLOSED", NULL, ZMQ_EVENT_CLOSED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_STREAMER
+  {"STREAMER", NULL, ZMQ_STREAMER, CONST_NUMBER},
+#endif
+#ifdef ZMQ_MECHANISM
+  {"MECHANISM", NULL, ZMQ_MECHANISM, CONST_NUMBER},
+#endif
+#ifdef ZMQ_CURVE_SECRETKEY
+  {"CURVE_SECRETKEY", NULL, ZMQ_CURVE_SECRETKEY, CONST_NUMBER},
+#endif
+#ifdef ZMQ_HWM
+  {"HWM", NULL, ZMQ_HWM, CONST_NUMBER},
+#endif
+#ifdef ZMQ_CURVE_PUBLICKEY
+  {"CURVE_PUBLICKEY", NULL, ZMQ_CURVE_PUBLICKEY, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_CONNECT_DELAYED
+  {"EVENT_CONNECT_DELAYED", NULL, ZMQ_EVENT_CONNECT_DELAYED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_EVENT_BIND_FAILED
+  {"EVENT_BIND_FAILED", NULL, ZMQ_EVENT_BIND_FAILED, CONST_NUMBER},
+#endif
+#ifdef ZMQ_BACKLOG
+  {"BACKLOG", NULL, ZMQ_BACKLOG, CONST_NUMBER},
 #endif
   {NULL, NULL, 0.0 , 0}
 };
@@ -10309,7 +10324,7 @@ LUA_NOBJ_API int luaopen_zmq(lua_State *L) {
 	luaL_register(L, "zmq", zmq_function);
 #else
 	lua_newtable(L);
-	luaL_setfuncs(L, zmq_function, 0);
+	nobj_setfuncs(L, zmq_function, 0);
 #endif
 
 	/* register module constants. */
